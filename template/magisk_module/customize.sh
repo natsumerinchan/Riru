@@ -48,7 +48,9 @@ extract "$ZIPFILE" 'verify.sh' "$TMPDIR/.vunzip"
 
 ui_print "- Extracting Magisk files"
 
-if [ "$MAGISK_VER_CODE" -ge 21000 ]; then
+if [ "$KSU" == "true" ]; then
+  MAGISK_CURRENT_MODULE_PATH=/data/adb/modules/riru-core
+elif [ "$MAGISK_VER_CODE" -ge 21000 ]; then
   MAGISK_CURRENT_MODULE_PATH=$(magisk --path)/.magisk/modules/riru-core
 else
   MAGISK_CURRENT_MODULE_PATH=/sbin/.magisk/modules/riru-core
@@ -59,6 +61,9 @@ cp "$MODPATH/module.prop" "$MODPATH/module.prop.bk"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh' "$MODPATH"
 extract "$ZIPFILE" 'system.prop' "$MODPATH"
+if [ "$KSU" == "true" ]; then
+  extract "$ZIPFILE" 'sepolicy.rule' "$MODPATH"
+fi
 extract "$ZIPFILE" 'util_functions.sh' "$MODPATH"
 extract "$ZIPFILE" 'uninstall.sh' "$MODPATH"
 
@@ -105,21 +110,48 @@ ui_print "- Extracting rirud"
 extract "$ZIPFILE" "rirud.apk" "$MODPATH"
 set_perm "$MODPATH/rirud.apk" 0 0 0600
 
+if [ "$KSU" == "true" ]; then
+  if [ "$ARCH" = "x64" ]; then
+    ui_print "- Extracting x64 Magisk binaries"
+    extract "$ZIPFILE" "magisk_x64" "$MODPATH"
+    extract "$ZIPFILE" "magiskpolicy_x64" "$MODPATH"
+    mv "$MODPATH/magisk_x64" "$MODPATH/magisk"
+    mv "$MODPATH/magiskpolicy_x64" "$MODPATH/magiskpolicy"
+  else
+    ui_print "- Extracting arm64 Magisk binaries"
+    extract "$ZIPFILE" "magisk" "$MODPATH"
+    extract "$ZIPFILE" "magiskpolicy" "$MODPATH"
+  fi
+  set_perm "$MODPATH/magisk" 0 0 0700
+  set_perm "$MODPATH/magiskpolicy" 0 0 0700
+  ln -s "magisk" "$MODPATH/resetprop"
+fi
+
 ui_print "- Checking if your ROM has incorrect SELinux rules"
 /system/bin/app_process -Djava.class.path="$MODPATH/rirud.apk" /system/bin --nice-name=riru_installer riru.Installer --check-selinux
 
+should_rm () {
+  if [ -d "$1" ]; then
+    rm -rf "$1"
+  elif [ -e "$1" ]; then
+    rm "$1"
+  else
+    ui_print "$1 is not exist,needn't delete."
+  fi
+}
+
 ui_print "- Removing old files"
-rm -rf /data/adb/riru/bin
-rm /data/adb/riru/native_bridge
-rm /data/adb/riru/api_version.new
-rm /data/adb/riru/version_code.new
-rm /data/adb/riru/version_name.new
-rm /data/adb/riru/enable_hide
-rm /data/adb/riru/api_version
-rm /data/adb/riru/util_functions.sh
-rm /data/misc/riru/api_version
-rm /data/misc/riru/version_code
-rm /data/misc/riru/version_name
+should_rm /data/adb/riru/bin
+should_rm /data/adb/riru/native_bridge
+should_rm /data/adb/riru/api_version.new
+should_rm /data/adb/riru/version_code.new
+should_rm /data/adb/riru/version_name.new
+should_rm /data/adb/riru/enable_hide
+should_rm /data/adb/riru/api_version
+should_rm /data/adb/riru/util_functions.sh
+should_rm /data/misc/riru/api_version
+should_rm /data/misc/riru/version_code
+should_rm /data/misc/riru/version_name
 
 # If Huawei's Maple is enabled, system_server is created with a special way which is out of Riru's control
 HUAWEI_MAPLE_ENABLED=$(grep_prop ro.maple.enable)
